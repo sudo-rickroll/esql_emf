@@ -1,0 +1,6 @@
+S : cust, count_1_quant, sum_2_quant, max_3_quant
+n : 3
+V : cust
+F-VECT : count_1_quant, sum_2_quant, max_3_quant
+PRED-LIST : 1.state = 'NY'; 2.state = 'NJ'; 3.state = 'CT'
+HAVING : NONE
