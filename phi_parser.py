@@ -22,7 +22,7 @@ def parse_phi(path: str) -> PhiOperator | None:
                 elif args[0] == "PRED-LIST":
                     phi.P = args[1].split(";")
                 elif args[0] == "HAVING":
-                    phi.H = None if args[1] == "NONE" else args[1].split(";")
+                    phi.H = None if args[1].lower() == "none" else args[1].split(";")
         return phi
     except Exception as e:
         print(f"A exception occured when parsing the phi operators from input text: {e}")
