@@ -65,6 +65,30 @@ def generate_mf_struct(phi: PhiOperator) -> str:
     struct_code += "\n"
     return struct_code
 
+def generate_output_code(phi: PhiOperator) -> str:
+    """
+    Generate code to output results using PrettyTable.
+    
+    Args:
+        phi: PhiOperator object containing query specification
+        
+    Returns:
+        String containing output code
+    """
+    output_code = "    # Generate output table\n"
+    output_code += "    table = PrettyTable()\n"
+    output_code += f"    table.field_names = {phi.S}\n\n"
+    
+    output_code += "    for obj in data:\n"
+    output_code += "        row = []\n"
+    output_code += "        for field in table.field_names:\n"
+    output_code += "            row.append(getattr(obj, field))\n"
+    output_code += "        table.add_row(row)\n\n"
+    
+    output_code += "    return table\n"
+    
+    return output_code
+
 def generate_query_code(phi: PhiOperator) -> str:
     """
     Generate complete Python code for the query processing engine.
@@ -128,6 +152,9 @@ def query():
     
     code += "            data.append(entry)\n"
     code += "            group_by_map[key] = len(data) - 1\n\n"
+
+    # Generate output
+    code += generate_output_code(phi)
     
     # Main execution
     code += """

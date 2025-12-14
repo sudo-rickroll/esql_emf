@@ -12,7 +12,7 @@ def query():
     """
     load_dotenv()
 
-    user = os.getenv('USERNAMEZ')
+    user = os.getenv('USER')
     password = os.getenv('PASSWORD')
     dbname = os.getenv('DBNAME')
 
@@ -43,6 +43,17 @@ def query():
             data.append(entry)
             group_by_map[key] = len(data) - 1
 
+    # Generate output table
+    table = PrettyTable()
+    table.field_names = ['cust', 'count_1_quant', 'sum_2_quant', 'max_3_quant']
+
+    for obj in data:
+        row = []
+        for field in table.field_names:
+            row.append(getattr(obj, field))
+        table.add_row(row)
+
+    return table
 
 if __name__ == "__main__":
     print(query())
