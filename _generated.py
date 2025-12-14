@@ -28,6 +28,21 @@ def query():
             self.sum_2_quant = 0
             self.max_3_quant = float('-inf')
 
+    # For entries in the H-Table    
+    data = []
+    # To ensure distinct records based on grouping-attributes   
+    group_by_map = {}
+
+    # First scan: Create entries for distinct grouping attribute values
+    for row in cur:
+        key = (row.get('cust'))
+        
+        if key not in group_by_map:
+            entry = MFStruct()
+            entry.cust = row.get('cust')
+            data.append(entry)
+            group_by_map[key] = len(data) - 1
+
 
 if __name__ == "__main__":
     print(query())

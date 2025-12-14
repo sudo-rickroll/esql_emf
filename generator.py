@@ -89,7 +89,7 @@ def query():
     \"\"\"
     load_dotenv()
 
-    user = os.getenv('USERNAMEZ')
+    user = os.getenv('USER')
     password = os.getenv('PASSWORD')
     dbname = os.getenv('DBNAME')
 
@@ -102,6 +102,32 @@ def query():
     
     # Add MFStruct definition
     code += generate_mf_struct(phi)
+
+    # Initialize data structure
+    code += """    # For entries in the H-Table    
+    data = []
+"""
+    code += """    # To ensure distinct records based on grouping-attributes   
+    group_by_map = {}\n
+"""
+    
+    # First scan: populate data with distinct grouping attribute values
+    code += "    # First scan: Create entries for distinct grouping attribute values\n"
+    code += "    for row in cur:\n"
+    
+    # Create key from grouping attributes
+    key_parts = [f"row.get('{attr}')" for attr in phi.V]
+    code += f"        key = ({', '.join(key_parts)})\n"
+    code += "        \n"
+    code += "        if key not in group_by_map:\n"
+    code += "            entry = MFStruct()\n"
+    
+    # Set grouping attribute values
+    for attr in phi.V:
+        code += f"            entry.{attr} = row.get('{attr}')\n"
+    
+    code += "            data.append(entry)\n"
+    code += "            group_by_map[key] = len(data) - 1\n\n"
     
     # Main execution
     code += """
