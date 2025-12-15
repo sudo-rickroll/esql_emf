@@ -43,6 +43,33 @@ def query():
             data.append(entry)
             group_by_map[key] = len(data) - 1
 
+    # Scan for grouping variable 1
+    cur.scroll(0, mode='absolute')
+
+    for row in cur:
+        for pos in range(len(data)):
+            cust = data[pos].cust
+            if cur.get('state')=='NY':
+                data[pos].count_1_quant += 1
+
+    # Scan for grouping variable 2
+    cur.scroll(0, mode='absolute')
+
+    for row in cur:
+        for pos in range(len(data)):
+            cust = data[pos].cust
+            if cur.get('state')=='NJ':
+                data[pos].sum_2_quant += row.get('quant')
+
+    # Scan for grouping variable 3
+    cur.scroll(0, mode='absolute')
+
+    for row in cur:
+        for pos in range(len(data)):
+            cust = data[pos].cust
+            if cur.get('state')=='CT':
+                data[pos].max_3_quant = max(data[pos].max_3_quant, row.get('quant'))
+
     # Generate output table
     table = PrettyTable()
     table.field_names = ['cust', 'count_1_quant', 'sum_2_quant', 'max_3_quant']

@@ -65,11 +65,128 @@ def generate_mf_struct(phi: PhiOperator) -> str:
     struct_code += "\n"
     return struct_code
 
-def generate_output_code(phi: PhiOperator) -> str:
+def generate_predicate_code(mainTableVar:str, predicate: str, grouping_vars: list) -> str:
+    """
+    Convert predicate string to Python comparison code.
+    
+    Args:
+        mainTableVar: Variable holding main table's data 
+        predicate: Predicate string (e.g., "1.state='NY' and 1.cust=cust")
+        grouping_vars: List of grouping variable names (not used, kept for compatibility)
+        
+    Returns:
+        Python code for the predicate
+    
+    """
+    import re
+    pred_code = predicate.strip()
+    
+    pattern = r'(\d+)\.(\w+)'
+    pred_code = re.sub(pattern, rf"{mainTableVar}.get('\2')", pred_code)
+    
+    # Replace single = with == for comparison (but not if already ==)
+    pred_code = re.sub(r'(?<!=)=(?!=)', '==', pred_code)
+    
+    return pred_code
+
+def generate_aggregate_scans(mainTableVar:str, hTableVar:str, phi: PhiOperator) -> str:
+    """
+    Generate the scanning loops for computing aggregate functions.
+    
+    Args:
+        mainTableVar: Variable holding main table's data
+        hTableVar: Variable holding H-Table's data
+        phi: PhiOperator object containing query specification
+        
+    Returns:
+        String containing the scan loop code
+    """
+    scan_code = ""
+    
+    # Group aggregate functions by grouping variable
+    # Aggregate format: <function>_<gv_num>_<attribute>
+    # Example: count_1_quant, sum_2_quant, avg_3_quant
+    agg_by_gv = {}
+    for func in phi.F:
+        parts = func.split('_')
+        if len(parts) >= 2:
+            gv_num = int(parts[1])  # Get grouping variable number (second part)
+            if gv_num not in agg_by_gv:
+                agg_by_gv[gv_num] = []
+            agg_by_gv[gv_num].append(func)
+    
+    # Generate scan for each grouping variable
+    for gv_num in sorted(agg_by_gv.keys()):
+        predicate = phi.P[gv_num - 1] if gv_num <= len(phi.P) else ""
+        pred_code = generate_predicate_code(mainTableVar, predicate, phi.V)
+        
+        scan_code += "    # Scan for grouping variable {}\n".format(gv_num)
+        scan_code += f"    {mainTableVar}.scroll(0, mode='absolute')\n\n"
+        scan_code += f"    for row in {mainTableVar}:\n"
+        scan_code += f"        for pos in range(len({hTableVar})):\n"
+        
+        # Add local variables for current entry
+        for attr in phi.V:
+            scan_code += f"            {attr} = {hTableVar}[pos].{attr}\n"
+        
+        # Add condition check
+        scan_code += f"            if {pred_code}:\n"
+        
+        # Update aggregates for this grouping variable
+        for func in agg_by_gv[gv_num]:
+            func_parts = func.split('_')
+            func_type = func_parts[0]  # sum, avg, count, etc. (first part)
+            attr = func_parts[2]  # attribute name (third part)
+            
+            if func_type == 'sum':
+                scan_code += f"                {hTableVar}[pos].{func} += row.get('{attr}')\n"
+            elif func_type == 'count':
+                scan_code += f"                {hTableVar}[pos].{func} += 1\n"
+            elif func_type == 'max':
+                scan_code += f"                {hTableVar}[pos].{func} = max({hTableVar}[pos].{func}, row.get('{attr}'))\n"
+            elif func_type == 'min':
+                scan_code += f"                {hTableVar}[pos].{func} = min({hTableVar}[pos].{func}, row.get('{attr}'))\n"
+            elif func_type == 'avg':
+                scan_code += f"                {hTableVar}[pos].{func}_sum += row.get('{attr}')\n"
+                scan_code += f"                {hTableVar}[pos].{func}_count += 1\n"
+                scan_code += f"                if {hTableVar}[pos].{func}_count != 0:\n"
+                scan_code += f"                    {hTableVar}[pos].{func} = {hTableVar}[pos].{func}_sum / {hTableVar}[pos].{func}_count\n"
+        
+        scan_code += "\n"
+    
+    return scan_code
+
+def generate_having_clause(hTableVar:str, phi: PhiOperator) -> str:
+    """
+    Generate code for HAVING clause filtering.
+    
+    Args:
+        hTableVar: Name of the H-Table variable
+        phi: PhiOperator object containing query specification
+        
+    Returns:
+        String containing HAVING clause code
+    """
+    if phi.H is None or phi.H.upper() == "NONE":
+        return ""
+    
+    having_code = "    # Apply HAVING clause\n"
+    having_condition = phi.H.replace(" ", "")
+    
+    # Replace aggregate function names with obj.attribute
+    for func in phi.F:
+        having_condition = having_condition.replace(func, f"obj.{func}")
+    
+    having_code += f"    {hTableVar} = [obj for obj in {hTableVar} if {having_condition}]\n\n"
+    
+    return having_code
+
+def generate_output_code(hTableVar:str, phi: PhiOperator) -> str:
     """
     Generate code to output results using PrettyTable.
     
     Args:
+        hTableVar: H-Table data table variable
         phi: PhiOperator object containing query specification
         
     Returns:
@@ -79,7 +196,7 @@ def generate_output_code(phi: PhiOperator) -> str:
     output_code += "    table = PrettyTable()\n"
     output_code += f"    table.field_names = {phi.S}\n\n"
     
-    output_code += "    for obj in data:\n"
+    output_code += f"    for obj in {hTableVar}:\n"
     output_code += "        row = []\n"
     output_code += "        for field in table.field_names:\n"
     output_code += "            row.append(getattr(obj, field))\n"
@@ -153,8 +270,14 @@ def query():
     code += "            data.append(entry)\n"
     code += "            group_by_map[key] = len(data) - 1\n\n"
 
+    # Generate aggregate computation scans
+    code += generate_aggregate_scans("cur", "data", phi)
+    
+    # Apply HAVING clause
+    code += generate_having_clause("data", phi)
+
     # Generate output
-    code += generate_output_code(phi)
+    code += generate_output_code("data", phi)
     
     # Main execution
     code += """
