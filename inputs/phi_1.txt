@@ -1,6 +1,6 @@
-S : cust, count_1_quant, sum_2_quant, max_3_quant
-n : 3
+S : cust, sum_1_quant, avg_1_quant, max_1_quant, min_1_quant, count_1_quant, sum_2_quant, avg_2_quant, max_2_quant, min_2_quant, count_2_quant
+n : 2
 V : cust
-F-VECT : count_1_quant, sum_2_quant, max_3_quant
-PRED-LIST : 1.state = 'NY'; 2.state = 'NJ'; 3.state = 'CT'
+F-VECT : sum_1_quant, avg_1_quant, max_1_quant, min_1_quant, count_1_quant, sum_2_quant, avg_2_quant, max_2_quant, min_2_quant, count_2_quant
+PRED-LIST : 1.state = 'NY'and 1.cust = cust; 2.state = 'CT'and 2.cust = cust
 HAVING : NONE

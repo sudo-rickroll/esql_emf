@@ -1,0 +1,6 @@
+S : cust, sum_1_quant, sum_2_quant
+n : 2
+V : cust
+F-VECT : sum_1_quant, sum_2_quant
+PRED-LIST : 1.year = 2019 and 1.cust = cust; 2.year = 2020 and 2.cust = cust
+HAVING : sum_2_quant > sum_1_quant

@@ -1,0 +1,6 @@
+S : prod, avg_1_quant, avg_2_quant
+n : 2
+V : prod
+F-VECT : avg_1_quant, avg_2_quant
+PRED-LIST : 1.state = 'NY' and 1.prod = prod; 2.state = 'NJ' and 2.prod = prod
+HAVING : avg_1_quant > avg_2_quant

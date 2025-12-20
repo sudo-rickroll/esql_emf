@@ -1,0 +1,6 @@
+S : cust, avg_1_quant, avg_2_quant
+n : 2
+V : cust
+F-VECT : avg_1_quant, avg_2_quant
+PRED-LIST : 1.cust = cust; 2.quant >= 0
+HAVING : avg_1_quant > avg_2_quant

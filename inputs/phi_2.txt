@@ -1,0 +1,6 @@
+S : cust, prod, month, year, day, sum_1_quant, max_1_quant, sum_2_quant, max_2_quant, count_1_quant, count_2_quant
+n : 2
+V : cust, prod, month, year, day
+F-VECT : sum_1_quant, max_1_quant, sum_2_quant, max_2_quant, count_1_quant, count_2_quant
+PRED-LIST : 1.cust = cust and 1.prod = prod and 1.month = month and 1.year = year and 1.day = day; 2.cust = cust and 2.prod = prod and 2.month = month and 2.year = year and 2.day = day
+HAVING : NONE

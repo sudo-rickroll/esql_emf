@@ -1,12 +1,10 @@
 """
-CS 562 - Query Processing Engine for EMF/MF Queries
+Query Processing Engine for EMF Queries
 This module generates Python code to execute Extended Multi-Feature queries
 based on the Phi operator specification.
 
-Author: Rangasai Kumbhashi Raghavendra
-CWID: 20028768
 """
-
+import os
 import subprocess
 import sys
 from phi_parser import parse_phi
@@ -41,11 +39,11 @@ def generate_mf_struct(phi: PhiOperator) -> str:
     struct_code = "    class MFStruct:\n"
     struct_code += "        def __init__(self):\n"
     
-    # Add grouping attributes
+    # Grouping attributes
     for attr in phi.V:
         struct_code += f"            self.{attr} = ''\n"
     
-    # Add aggregate function fields
+    # Aggregate function fields
     for func in phi.F:
         func_type = func.split('_')[0]  # sum, avg, count, etc. (first part)
         
@@ -65,14 +63,14 @@ def generate_mf_struct(phi: PhiOperator) -> str:
     struct_code += "\n"
     return struct_code
 
-def generate_predicate_code(mainTableVar:str, predicate: str, grouping_vars: list) -> str:
+def generate_predicate_code(iter:str, predicate: str) -> str:
     """
     Convert predicate string to Python comparison code.
     
     Args:
-        mainTableVar: Variable holding main table's data 
+        iter: Variable that iterates through main table's data 
         predicate: Predicate string (e.g., "1.state='NY' and 1.cust=cust")
-        grouping_vars: List of grouping variable names (not used, kept for compatibility)
+        grouping_vars: List of grouping variable names
         
     Returns:
         Python code for the predicate
@@ -82,10 +80,10 @@ def generate_predicate_code(mainTableVar:str, predicate: str, grouping_vars: lis
     pred_code = predicate.strip()
     
     pattern = r'(\d+)\.(\w+)'
-    pred_code = re.sub(pattern, rf"{mainTableVar}.get('\2')", pred_code)
+    pred_code = re.sub(pattern, rf"{iter}.get('\2')", pred_code)
     
-    # Replace single = with == for comparison (but not if already ==)
-    pred_code = re.sub(r'(?<!=)=(?!=)', '==', pred_code)
+    # Replace single = with == for comparison (but not if already == or >= or <=)
+    pred_code = re.sub(r'(?<![<>=!])=(?!=)', '==', pred_code)
     
     return pred_code
 
@@ -118,7 +116,7 @@ def generate_aggregate_scans(mainTableVar:str, hTableVar:str, phi: PhiOperator) 
     # Generate scan for each grouping variable
     for gv_num in sorted(agg_by_gv.keys()):
         predicate = phi.P[gv_num - 1] if gv_num <= len(phi.P) else ""
-        pred_code = generate_predicate_code(mainTableVar, predicate, phi.V)
+        pred_code = generate_predicate_code("row", predicate)
         
         scan_code += "    # Scan for grouping variable {}\n".format(gv_num)
         scan_code += f"    {mainTableVar}.scroll(0, mode='absolute')\n\n"
@@ -171,7 +169,7 @@ def generate_having_clause(hTableVar:str, phi: PhiOperator) -> str:
         return ""
     
     having_code = "    # Apply HAVING clause\n"
-    having_condition = phi.H.replace(" ", "")
+    having_condition = phi.H.strip()
     
     # Replace aggregate function names with obj.attribute
     for func in phi.F:
@@ -181,7 +179,7 @@ def generate_having_clause(hTableVar:str, phi: PhiOperator) -> str:
     
     return having_code
 
-def generate_output_code(hTableVar:str, phi: PhiOperator) -> str:
+def generate_output_code(hTableVar:str, phi: PhiOperator, output_filename: str) -> str:
     """
     Generate code to output results using PrettyTable.
     
@@ -192,21 +190,36 @@ def generate_output_code(hTableVar:str, phi: PhiOperator) -> str:
     Returns:
         String containing output code
     """
-    output_code = "    # Generate output table\n"
-    output_code += "    table = PrettyTable()\n"
-    output_code += f"    table.field_names = {phi.S}\n\n"
+    code =  "    if not os.path.exists('outputs'):\n"
+    code += "        os.makedirs('outputs')\n\n"
     
-    output_code += f"    for obj in {hTableVar}:\n"
-    output_code += "        row = []\n"
-    output_code += "        for field in table.field_names:\n"
-    output_code += "            row.append(getattr(obj, field))\n"
-    output_code += "        table.add_row(row)\n\n"
     
-    output_code += "    return table\n"
-    
-    return output_code
+    code += "    headers = " + str(phi.S) + "\n"
+    code += "    table_rows = []\n"
+    # Loop through data and write rows
+    code += f"    for obj in {hTableVar}:\n"
+    code += "        row_vals = []\n"
+    code += f"        for field in {phi.S}:\n"
+    code += "            try:\n"
+    code += "                val = getattr(obj, field)\n"
+    code += "            except AttributeError:\n"
+    # Handle expressions like 'sum_1 / sum_2' using eval
+    code += "                try:\n"
+    code += "                    val = eval(field, {}, obj.__dict__)\n"
+    code += "                except Exception:\n"
+    code += "                    val = ''\n"
+    code += "            row_vals.append(str(val))\n"
+    code += "        table_rows.append(row_vals)\n\n"
 
-def generate_query_code(phi: PhiOperator) -> str:
+    code += f"    output_path = os.path.join('outputs', '{output_filename}')\n"
+    code += "    with open(output_path, 'w') as f:\n"
+    code += "        f.write(tabulate(table_rows, headers=headers, tablefmt='psql'))\n\n"
+    
+    code += f"    return len({hTableVar})\n"
+    
+    return code
+
+def generate_query_code(phi: PhiOperator, output_filename: str) -> str:
     """
     Generate complete Python code for the query processing engine.
     
@@ -219,14 +232,14 @@ def generate_query_code(phi: PhiOperator) -> str:
     code = """import os
 import psycopg2
 import psycopg2.extras
-from prettytable import PrettyTable
 from dotenv import load_dotenv
+from tabulate import tabulate
 
 # DO NOT EDIT THIS FILE, IT IS GENERATED BY generator.py
 
 def query():
     \"\"\"
-    Execute the EMF query and return results as a PrettyTable.
+    Execute the EMF query and return tabulated results in a file.
     \"\"\"
     load_dotenv()
 
@@ -234,8 +247,7 @@ def query():
     password = os.getenv('PASSWORD')
     dbname = os.getenv('DBNAME')
 
-    conn = psycopg2.connect("dbname="+dbname+" user="+user+" password="+password,
-                            cursor_factory=psycopg2.extras.DictCursor, host='127.0.0.1', port='5432')
+    conn = psycopg2.connect("dbname="+dbname+" user="+user+" password="+password)
     cur = conn.cursor()
     cur.execute("SELECT * FROM sales")
     
@@ -266,6 +278,7 @@ def query():
     # Set grouping attribute values
     for attr in phi.V:
         code += f"            entry.{attr} = row.get('{attr}')\n"
+    #code += f"            print(\"attr: \", entry.{attr})\n"
     
     code += "            data.append(entry)\n"
     code += "            group_by_map[key] = len(data) - 1\n\n"
@@ -277,7 +290,7 @@ def query():
     code += generate_having_clause("data", phi)
 
     # Generate output
-    code += generate_output_code("data", phi)
+    code += generate_output_code("data", phi, output_filename)
     
     # Main execution
     code += """
@@ -316,7 +329,9 @@ def main():
     
     # Generate query code
     print("\nGenerating query processing code...")
-    code = generate_query_code(phi)
+    basename = os.path.basename(input_file)
+    output_filename = basename
+    code = generate_query_code(phi, output_filename)
     
     # Write to file
     output_file = "_generated.py"
