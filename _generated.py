@@ -1,7 +1,6 @@
 import os
 import psycopg2
 import psycopg2.extras
-from prettytable import PrettyTable
 from dotenv import load_dotenv
 from tabulate import tabulate
 
@@ -9,24 +8,38 @@ from tabulate import tabulate
 
 def query():
     """
-    Execute the EMF query and return results as a PrettyTable.
+    Execute the EMF query and return tabulated results in a file.
     """
     load_dotenv()
 
     user = os.getenv('USER')
     password = os.getenv('PASSWORD')
     dbname = os.getenv('DBNAME')
+    host = os.getenv('HOST')
+    port = os.getenv('PORT')
 
     conn = psycopg2.connect("dbname="+dbname+" user="+user+" password="+password,
-                            cursor_factory=psycopg2.extras.DictCursor, host='127.0.0.1', port='5432')
+                            cursor_factory=psycopg2.extras.DictCursor, host=host, port=port)
     cur = conn.cursor()
     cur.execute("SELECT * FROM sales")
     
     class MFStruct:
         def __init__(self):
-            self.prod = ''
+            self.cust = ''
             self.sum_1_quant = 0
+            self.avg_1_quant_sum = 0
+            self.avg_1_quant_count = 0
+            self.avg_1_quant = 0.0
+            self.max_1_quant = float('-inf')
+            self.min_1_quant = float('inf')
+            self.count_1_quant = 0
             self.sum_2_quant = 0
+            self.avg_2_quant_sum = 0
+            self.avg_2_quant_count = 0
+            self.avg_2_quant = 0.0
+            self.max_2_quant = float('-inf')
+            self.min_2_quant = float('inf')
+            self.count_2_quant = 0
 
     # For entries in the H-Table    
     data = []
@@ -35,11 +48,11 @@ def query():
 
     # First scan: Create entries for distinct grouping attribute values
     for row in cur:
-        key = (row.get('prod'))
+        key = (row.get('cust'))
         
         if key not in group_by_map:
             entry = MFStruct()
-            entry.prod = row.get('prod')
+            entry.cust = row.get('cust')
             data.append(entry)
             group_by_map[key] = len(data) - 1
 
@@ -48,27 +61,41 @@ def query():
 
     for row in cur:
         for pos in range(len(data)):
-            prod = data[pos].prod
-            if row.get('state') == 'NY' and row.get('prod') == prod:
+            cust = data[pos].cust
+            if row.get('state') == 'NY'and row.get('cust') == cust:
                 data[pos].sum_1_quant += row.get('quant')
+                data[pos].avg_1_quant_sum += row.get('quant')
+                data[pos].avg_1_quant_count += 1
+                if data[pos].avg_1_quant_count != 0:
+                    data[pos].avg_1_quant = data[pos].avg_1_quant_sum / data[pos].avg_1_quant_count
+                data[pos].max_1_quant = max(data[pos].max_1_quant, row.get('quant'))
+                data[pos].min_1_quant = min(data[pos].min_1_quant, row.get('quant'))
+                data[pos].count_1_quant += 1
 
     # Scan for grouping variable 2
     cur.scroll(0, mode='absolute')
 
     for row in cur:
         for pos in range(len(data)):
-            prod = data[pos].prod
-            if row.get('prod') == prod:
+            cust = data[pos].cust
+            if row.get('state') == 'CT'and row.get('cust') == cust:
                 data[pos].sum_2_quant += row.get('quant')
+                data[pos].avg_2_quant_sum += row.get('quant')
+                data[pos].avg_2_quant_count += 1
+                if data[pos].avg_2_quant_count != 0:
+                    data[pos].avg_2_quant = data[pos].avg_2_quant_sum / data[pos].avg_2_quant_count
+                data[pos].max_2_quant = max(data[pos].max_2_quant, row.get('quant'))
+                data[pos].min_2_quant = min(data[pos].min_2_quant, row.get('quant'))
+                data[pos].count_2_quant += 1
 
     if not os.path.exists('outputs'):
         os.makedirs('outputs')
 
-    headers = ['prod', 'sum_1_quant', 'sum_2_quant', 'sum_1_quant / sum_2_quant']
+    headers = ['cust', 'sum_1_quant', 'avg_1_quant', 'max_1_quant', 'min_1_quant', 'count_1_quant', 'sum_2_quant', 'avg_2_quant', 'max_2_quant', 'min_2_quant', 'count_2_quant']
     table_rows = []
     for obj in data:
         row_vals = []
-        for field in ['prod', 'sum_1_quant', 'sum_2_quant', 'sum_1_quant / sum_2_quant']:
+        for field in ['cust', 'sum_1_quant', 'avg_1_quant', 'max_1_quant', 'min_1_quant', 'count_1_quant', 'sum_2_quant', 'avg_2_quant', 'max_2_quant', 'min_2_quant', 'count_2_quant']:
             try:
                 val = getattr(obj, field)
             except AttributeError:
@@ -79,7 +106,7 @@ def query():
             row_vals.append(str(val))
         table_rows.append(row_vals)
 
-    output_path = os.path.join('outputs', 'phi_6.txt')
+    output_path = os.path.join('outputs', 'phi_1.txt')
     with open(output_path, 'w') as f:
         f.write(tabulate(table_rows, headers=headers, tablefmt='psql'))
 
